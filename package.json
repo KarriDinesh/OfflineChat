@@ -1,0 +1,16 @@
+{
+  "name": "nearchat",
+  "private": true,
+  "version": "1.0.0",
+  "description": "NearChat — Offline-first P2P encrypted mesh chat PWA",
+  "workspaces": ["app", "signaling"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=signaling\" \"npm run dev --workspace=app\"",
+    "dev:app": "npm run dev --workspace=app",
+    "dev:signal": "npm run dev --workspace=signaling",
+    "install:all": "npm install && npm install --workspace=app && npm install --workspace=signaling"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

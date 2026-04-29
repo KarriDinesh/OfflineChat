@@ -1,0 +1,16 @@
+{
+  "name": "@nearchat/signaling",
+  "version": "1.0.0",
+  "description": "NearChat local signaling server",
+  "main": "dist/cli.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/cli.js",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "ws": "^8.17.1",
+    "qrcode-terminal": "^0.12.0",
+    "uuid": "^9.0.1"
+  }
+}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover fills iPhone notch/Dynamic Island -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+    <!-- PWA / Theme -->
+    <meta name="theme-color" content="#0a0a14" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- iOS Standalone PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="OfflineConnect" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <!-- iOS splash screens (portrait) -->
+    <link rel="apple-touch-startup-image" href="/icons/icon-512.png" />
+
+    <!-- SEO -->
+    <meta name="description" content="OfflineConnect — P2P encrypted mesh chat. Connect with anyone nearby without internet." />
+    <meta property="og:title" content="OfflineConnect — Connect Without Internet" />
+    <meta property="og:description" content="No internet needed. Encrypted. Peer-to-peer mesh." />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>OfflineConnect — Connect Without Internet</title>
+
+    <style>
+      /* Prevent iOS bounce/overscroll and double-tap zoom flash */
+      html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+      body { overscroll-behavior: none; -webkit-overflow-scrolling: touch; }
+      #root { position: fixed; inset: 0; overflow: hidden; }
+    </style>
+    <!-- Capture beforeinstallprompt BEFORE React mounts — the event fires early -->
+    <script>
+      window.__pwaPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__pwaPrompt = e;
+        // Notify React if it's already mounted
+        window.dispatchEvent(new Event('pwa-installable'));
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
