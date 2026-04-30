@@ -109,23 +109,53 @@ body {
 
 /* ─── Mobile layout overrides ──────────────────────────────────────── */
 @media (max-width: 768px) {
+  /* Stack everything in a single column */
   .app-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr auto;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh; /* dynamic viewport height — respects browser chrome */
+    overflow: hidden;
   }
+
   .sidebar { display: none !important; }
+
+  /* Chat main fills remaining space, scrolls internally */
   .chat-main {
-    /* Leave room for bottom nav + home indicator */
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    /* Space for fixed bottom nav + safe area */
     padding-bottom: calc(var(--bottom-nav-h) + var(--sab));
+    overflow: hidden;
   }
+
   .messages-container {
-    padding: 12px 14px 8px;
+    padding: 10px 12px 4px;
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
+
+  .message-bubble { max-width: 86%; font-size: 14px; }
+
+  .chat-header {
+    padding: 10px 14px;
+    flex-shrink: 0;
+  }
+
+  /* Input bar sits just above the bottom nav */
   .input-bar {
-    padding: 10px 12px calc(10px + var(--sab));
+    flex-shrink: 0;
+    padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    gap: 6px;
   }
-  .message-bubble { max-width: 82%; }
-  .chat-header { padding: 12px 14px; }
+
+  .input-field {
+    font-size: 16px; /* prevent iOS zoom on focus */
+    padding: 9px 14px;
+  }
 }
 
 /* ─── Topbar ───────────────────────────────────────────────────────── */
@@ -135,44 +165,64 @@ body {
   align-items: center;
   padding: 0 20px;
   padding-top: var(--sat);      /* notch safe area */
-  gap: 12px;
-  background: rgba(17,17,31,0.85);
+  gap: 8px;
+  background: rgba(17,17,31,0.92);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-bottom: 1px solid var(--border);
   z-index: 50;
   height: calc(56px + var(--sat));
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 @media (max-width: 768px) {
-  .topbar { padding: var(--sat) 14px 0; height: calc(52px + var(--sat)); }
+  .topbar {
+    padding: var(--sat) 12px 0;
+    height: calc(50px + var(--sat));
+    gap: 6px;
+  }
+  /* Hide purpose label pill on mobile — saves space */
+  .topbar-purpose { display: none !important; }
+  /* Compress logo text on small screens */
+  .topbar-logo span { font-size: 15px; }
+  /* Quiet badge shorter */
+  .topbar-quiet { font-size: 11px !important; padding: 2px 7px !important; }
+  /* Peer badge: icon only on very small screens */
+  .peer-badge { padding: 4px 8px; }
 }
 .topbar-logo {
   display: flex; align-items: center; gap: 8px;
-  font-weight: 700; font-size: 18px; letter-spacing: -0.3px;
+  font-weight: 700; font-size: 17px; letter-spacing: -0.3px;
+  flex-shrink: 0;
+  min-width: 0;
 }
 .topbar-logo .logo-icon {
-  width: 32px; height: 32px;
+  width: 30px; height: 30px; flex-shrink: 0;
   background: linear-gradient(135deg, var(--accent), #a78bfa);
   border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px;
+  font-size: 15px;
   box-shadow: var(--shadow-glow);
 }
-.topbar-spacer { flex: 1; }
+.topbar-spacer { flex: 1; min-width: 0; }
 .peer-badge {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 12px;
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
   background: var(--online-soft);
   border: 1px solid rgba(0,229,160,0.2);
   border-radius: var(--radius-full);
   font-size: 12px; font-weight: 500;
   color: var(--online);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .peer-badge::before {
-  content: ''; width: 7px; height: 7px;
+  content: ''; width: 6px; height: 6px;
   border-radius: 50%; background: var(--online);
-  box-shadow: 0 0 6px var(--online);
+  box-shadow: 0 0 5px var(--online);
   animation: pulse-dot 2s infinite;
+  flex-shrink: 0;
 }
 
 /* ─── Bottom navigation (mobile only) ─────────────────────────────── */
@@ -383,36 +433,42 @@ body {
 
 /* ─── Setup / Join pages ───────────────────────────────────────────── */
 .page-center {
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
   height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  background: var(--bg-base); padding: 20px 16px;
-  padding-top: calc(20px + var(--sat));
-  padding-bottom: calc(20px + var(--sab));
+  background: var(--bg-base);
+  padding: calc(16px + var(--sat)) 14px calc(16px + var(--sab));
+}
+@media (min-width: 480px) {
+  .page-center { align-items: center; }
 }
 .setup-card {
   background: var(--bg-surface); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 32px 24px;
+  border-radius: var(--radius-lg); padding: 24px 18px;
   width: 100%; max-width: 440px; box-shadow: var(--shadow-card);
   animation: page-slide-in 0.35s var(--spring);
 }
 @media (min-width: 480px) {
-  .setup-card { padding: 40px; }
+  .setup-card { padding: 36px 32px; }
 }
-.setup-hero { text-align: center; margin-bottom: 28px; }
+.setup-hero { text-align: center; margin-bottom: 22px; }
 .setup-hero-icon {
-  width: 80px; height: 80px;
+  width: 68px; height: 68px;
   background: linear-gradient(135deg, var(--accent), #a78bfa);
-  border-radius: 24px; display: flex; align-items: center; justify-content: center;
-  font-size: 40px; margin: 0 auto 16px;
+  border-radius: 20px; display: flex; align-items: center; justify-content: center;
+  font-size: 34px; margin: 0 auto 12px;
   box-shadow: var(--shadow-glow);
   animation: icon-float 3s ease-in-out infinite;
+}
+@media (min-width: 480px) {
+  .setup-hero-icon { width: 80px; height: 80px; font-size: 40px; border-radius: 24px; }
 }
 @keyframes icon-float {
   0%,100% { transform: translateY(0); }
   50%      { transform: translateY(-6px); }
 }
-.setup-hero h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
-.setup-hero p { font-size: 14px; color: var(--text-secondary); margin-top: 8px; line-height: 1.6; }
+.setup-hero h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+@media (min-width: 480px) { .setup-hero h1 { font-size: 24px; } }
+.setup-hero p { font-size: 14px; color: var(--text-secondary); margin-top: 6px; line-height: 1.6; }
 .form-group { margin-bottom: 14px; }
 .form-label { font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 6px; display: block; }
 .form-input {

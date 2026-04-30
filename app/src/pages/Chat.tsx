@@ -136,16 +136,17 @@ export default function Chat() {
           </div>
         </div>
         {purposeMeta && (
-          <span style={{
+          <span className="topbar-purpose" style={{
             fontSize: 11, color: 'var(--text-muted)', padding: '3px 8px',
             background: 'var(--bg-elevated)', borderRadius: 10, border: '1px solid var(--border)',
+            whiteSpace: 'nowrap', flexShrink: 0,
           }}>
             {purposeMeta.icon} {purposeMeta.label}
           </span>
         )}
         <div className="topbar-spacer" />
         {quietMode && (
-          <span style={{ fontSize: 12, color: 'var(--sos)', background: 'var(--sos-soft)', padding: '3px 10px', borderRadius: 10, border: '1px solid rgba(255,59,92,0.2)' }}>
+          <span className="topbar-quiet" style={{ fontSize: 12, color: 'var(--sos)', background: 'var(--sos-soft)', padding: '3px 10px', borderRadius: 10, border: '1px solid rgba(255,59,92,0.2)', flexShrink: 0, whiteSpace: 'nowrap' }}>
             🔇 Quiet
           </span>
         )}
@@ -157,18 +158,19 @@ export default function Chat() {
               background: showAdminPanel ? 'var(--accent-soft)' : 'var(--bg-elevated)',
               border: `1px solid ${showAdminPanel ? 'var(--accent)' : 'var(--border)'}`,
               color: showAdminPanel ? 'var(--accent)' : 'var(--text-secondary)',
-              borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              borderRadius: 8, padding: '6px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              flexShrink: 0, whiteSpace: 'nowrap',
             }}
           >
             ⚙️ Admin
           </button>
         )}
         <button id="btn-sos-top" className="btn btn-sos" onClick={handleSOS}
-          style={{ padding: '7px 12px', fontSize: 13 }}>🚨</button>
-        <div className="peer-badge" style={{ marginLeft: 4 }}>
-          {peers.size} peer{peers.size !== 1 ? 's' : ''}
+          style={{ padding: '6px 10px', fontSize: 13, flexShrink: 0 }}>🚨</button>
+        <div className="peer-badge" style={{ marginLeft: 2 }}>
+          {peers.size}p
         </div>
-        <span className={`status-dot ${connected ? 'online' : 'offline'}`} style={{ marginLeft: 6 }} />
+        <span className={`status-dot ${connected ? 'online' : 'offline'}`} style={{ marginLeft: 4, flexShrink: 0 }} />
       </header>
 
       {/* ── Sidebar (desktop) ── */}
