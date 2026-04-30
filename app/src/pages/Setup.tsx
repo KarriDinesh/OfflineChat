@@ -7,23 +7,34 @@ import { v4 as uuid } from 'uuid'
 
 async function detectLanIP(): Promise<string> {
   const host = window.location.hostname
-  // Already running on a LAN IP — use it directly
+  // Already serving from a LAN IP — use it directly
   if (host && host !== 'localhost' && host !== '127.0.0.1' && /^\d+\.\d+\.\d+\.\d+$/.test(host)) return host
-  // Running on a named host (e.g. github.io) — can't auto-detect, ask user
-  if (host && !/^(localhost|127\.0\.0\.1)$/.test(host)) return ''
+  // Try local signaling server first (dev mode)
   try {
-    const res = await fetch(`http://127.0.0.1:3000/config`, { signal: AbortSignal.timeout(1500) })
+    const res = await fetch(`http://127.0.0.1:3000/config`, { signal: AbortSignal.timeout(1200) })
     if (res.ok) { const d = await res.json(); if (d.lanIp) return d.lanIp }
   } catch {}
+  // WebRTC ICE candidate trick — reads the device's own LAN IP
+  // Works in all browsers including when served from github.io
   return new Promise((resolve) => {
     const pc = new RTCPeerConnection({ iceServers: [] })
-    const t = setTimeout(() => { pc.close(); resolve('') }, 2000)
+    const found = new Set<string>()
+    const t = setTimeout(() => { pc.close(); resolve('') }, 3000)
     pc.createDataChannel('')
-    pc.createOffer().then(o => pc.setLocalDescription(o))
+    pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => { clearTimeout(t); pc.close(); resolve('') })
     pc.onicecandidate = (e) => {
-      if (!e.candidate) return
+      if (!e.candidate) {
+        clearTimeout(t)
+        pc.close()
+        // Prefer 192.168.x.x, then 10.x.x.x, then 172.x.x.x
+        const pick = [...found].find(ip => ip.startsWith('192.168.')) ??
+                     [...found].find(ip => ip.startsWith('10.'))      ??
+                     [...found].find(ip => ip.startsWith('172.'))     ?? ''
+        resolve(pick)
+        return
+      }
       const m = /(\d+\.\d+\.\d+\.\d+)/.exec(e.candidate.candidate)
-      if (m && m[1] !== '127.0.0.1') { clearTimeout(t); pc.close(); resolve(m[1]) }
+      if (m && m[1] !== '127.0.0.1') found.add(m[1])
     }
   })
 }
@@ -35,11 +46,12 @@ export default function Setup() {
   const [alias, setAliasLocal] = useState('')
   const [roomName, setRoomName] = useState('')
   const [purpose, setPurpose] = useState<RoomPurpose>('event')
-  const [expiryMinutes, setExpiryMinutes] = useState(30)  // QR expiry
-  const [memberCap, setMemberCap] = useState(0)           // 0 = unlimited
+  const [expiryMinutes, setExpiryMinutes] = useState(30)
+  const [memberCap, setMemberCap] = useState(0)
   const [step, setStep] = useState<'identity' | 'purpose' | 'done'>('identity')
   const [detectedIp, setDetectedIp] = useState<string>('')
-  const [ipStatus, setIpStatus] = useState<'detecting' | 'found' | 'manual'>('detecting')
+  const [ipStatus, setIpStatus] = useState<'detecting' | 'found' | 'failed'>('detecting')
+  const [ipMode, setIpMode] = useState<'auto' | 'wifi'>('auto')
   const [manualIp, setManualIp] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -54,18 +66,24 @@ export default function Setup() {
     return () => clearInterval(id)
   }, [expiresAt])
 
-  useEffect(() => {
+  const runDetect = useCallback(() => {
+    setIpStatus('detecting')
+    setDetectedIp('')
     detectLanIP().then(ip => {
       if (ip) {
         setDetectedIp(ip)
         setIpStatus('found')
       } else {
-        setIpStatus('manual')
+        setIpStatus('failed')
+        setIpMode('wifi') // auto-switch to WiFi mode when detection fails
       }
     })
   }, [])
 
-  const effectiveIp = ipStatus === 'manual' ? manualIp : detectedIp
+  useEffect(() => { runDetect() }, [])
+
+  const effectiveIp = ipMode === 'auto' && ipStatus === 'found' ? detectedIp : manualIp
+  const canProceed = !!alias.trim() && !!effectiveIp.trim()
 
   const handleCreate = useCallback(async () => {
     if (!alias.trim() || !effectiveIp) return
@@ -135,37 +153,109 @@ export default function Setup() {
                 onChange={e => setRoomName(e.target.value)} id="setup-room-name" />
             </div>
 
-            {/* IP detection */}
+            {/* ── Network / IP card ── */}
             <div style={{
-              padding: '12px 14px', background: 'var(--bg-elevated)',
-              border: `1px solid ${ipStatus === 'found' ? 'rgba(0,229,160,0.25)' : 'var(--border)'}`,
-              borderRadius: 'var(--radius-sm)', marginBottom: 16,
-              display: 'flex', alignItems: 'center', gap: 10,
+              marginBottom: 16,
+              background: 'var(--bg-elevated)',
+              border: `1px solid ${
+                ipStatus === 'found' && ipMode === 'auto' ? 'rgba(0,229,160,0.3)'
+                : ipMode === 'wifi' && manualIp ? 'rgba(108,99,255,0.3)'
+                : 'var(--border)'
+              }`,
+              borderRadius: 12, overflow: 'hidden',
             }}>
-              {ipStatus === 'detecting' && <>
-                <span style={{ fontSize: 18 }}>🔍</span>
-                <div><div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>DETECTING NETWORK…</div></div>
-              </>}
-              {ipStatus === 'found' && <>
-                <span style={{ fontSize: 18 }}>✅</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--online)' }}>NETWORK DETECTED</div>
-                  <div style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', marginTop: 2 }}>{detectedIp}</div>
+              {/* Mode toggle */}
+              <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+                {(['auto', 'wifi'] as const).map(m => (
+                  <button key={m} id={`ip-mode-${m}`}
+                    onClick={() => setIpMode(m)}
+                    style={{
+                      flex: 1, padding: '10px 0', border: 'none', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 700, letterSpacing: '0.5px',
+                      background: ipMode === m ? 'var(--accent-soft)' : 'transparent',
+                      color: ipMode === m ? 'var(--accent)' : 'var(--text-muted)',
+                      borderBottom: ipMode === m ? '2px solid var(--accent)' : '2px solid transparent',
+                      transition: 'all 0.15s',
+                    }}>
+                    {m === 'auto' ? '🔍 Auto Detect' : '📶 WiFi Connect'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Auto mode content */}
+              {ipMode === 'auto' && (
+                <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {ipStatus === 'detecting' && <>
+                    <span style={{ fontSize: 18, animation: 'spin 1s linear infinite' }}>🔄</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>SCANNING YOUR NETWORK…</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Reading device LAN IP via WebRTC</div>
+                    </div>
+                  </>}
+                  {ipStatus === 'found' && <>
+                    <span style={{ fontSize: 22 }}>✅</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--online)', letterSpacing: '0.5px' }}>LAN IP DETECTED</div>
+                      <div style={{ fontSize: 15, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', marginTop: 2, fontWeight: 700 }}>{detectedIp}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Make sure participants are on the same WiFi</div>
+                    </div>
+                    <button
+                      id="btn-retry-detect"
+                      onClick={runDetect}
+                      style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', borderRadius: 6, padding: '4px 8px' }}
+                    >↻ Retry</button>
+                  </>}
+                  {ipStatus === 'failed' && <>
+                    <span style={{ fontSize: 22 }}>⚠️</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b' }}>COULD NOT AUTO-DETECT</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Switch to WiFi mode to enter IP manually</div>
+                    </div>
+                    <button
+                      id="btn-retry-detect"
+                      onClick={runDetect}
+                      style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', borderRadius: 6, padding: '4px 8px' }}
+                    >↻ Retry</button>
+                  </>}
                 </div>
-                <button style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer' }}
-                  onClick={() => setIpStatus('manual')}>change</button>
-              </>}
-              {ipStatus === 'manual' && <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 5 }}>LAN IP</div>
-                <input className="form-input font-mono" placeholder="192.168.1.x"
-                  value={manualIp} onChange={e => setManualIp(e.target.value)} id="setup-ip-manual" />
-              </div>}
+              )}
+
+              {/* WiFi mode content */}
+              {ipMode === 'wifi' && (
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+                    padding: '8px 10px', background: 'rgba(108,99,255,0.08)',
+                    border: '1px solid rgba(108,99,255,0.2)', borderRadius: 8,
+                  }}>
+                    <span style={{ fontSize: 16 }}>📶</span>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      <strong style={{ color: 'var(--text-secondary)' }}>Make sure all devices are on the same WiFi.</strong>{' '}
+                      Find your LAN IP in Settings → WiFi → your network.
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, letterSpacing: '0.5px' }}>YOUR DEVICE'S LAN IP</div>
+                  <input
+                    className="form-input"
+                    style={{ fontFamily: 'var(--font-mono)', letterSpacing: '1px' }}
+                    placeholder="e.g. 192.168.1.42"
+                    value={manualIp}
+                    onChange={e => setManualIp(e.target.value)}
+                    id="setup-ip-manual"
+                  />
+                  {ipStatus === 'found' && detectedIp && (
+                    <button
+                      onClick={() => { setManualIp(detectedIp); }}
+                      style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', padding: 0 }}
+                    >Use auto-detected: {detectedIp}</button>
+                  )}
+                </div>
+              )}
             </div>
 
             <button className="btn btn-primary w-full" id="btn-next-purpose"
-              disabled={!alias.trim() || (ipStatus === 'manual' && !manualIp.trim())}
+              disabled={!canProceed}
               onClick={() => setStep('purpose')}>
-              {ipStatus === 'detecting' ? '⏳ Detecting network…' : 'Next — Choose Room Type →'}
+              {ipStatus === 'detecting' && ipMode === 'auto' ? '🔍 Detecting…' : 'Next — Choose Room Type →'}
             </button>
 
             <div className="divider"><div className="divider-line" /><span className="divider-text">already have a room?</span><div className="divider-line" /></div>
