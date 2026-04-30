@@ -38,14 +38,19 @@ export default function App() {
     registerBackgroundSync()
 
     // ── Deep-link QR handler ──────────────────────────────────────────
-    // QR codes encode: <appUrl>?join=<base64(JSON config)>
-    // When a participant scans the QR their browser opens this URL.
+    // Flow: Phone scans QR → server ?r=CODE redirect → /?join=base64config
+    // OR:   Older QR that already had ?join= embedded
     // We read the param, pre-load the room config, and send them to Join.
     const params = new URLSearchParams(window.location.search)
     const joinParam = params.get('join')
     if (joinParam) {
       try {
-        const config = JSON.parse(atob(decodeURIComponent(joinParam)))
+        // Server uses Buffer.from(json).toString('base64') = standard base64
+        // searchParams.get() already URL-decodes, so just atob() directly
+        let decoded: string
+        try { decoded = atob(joinParam) }
+        catch { decoded = atob(decodeURIComponent(joinParam)) }
+        const config = JSON.parse(decoded)
         if (config.roomId && config.cryptoSalt) {
           setRoomConfig(config)
           setPhase('join')

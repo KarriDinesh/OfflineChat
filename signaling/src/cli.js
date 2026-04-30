@@ -99,6 +99,30 @@ const httpServer = createServer((req, res) => {
     return
   }
 
+  // ── QR short-code redirect: GET /?r=ABC123 ───────────────────────
+  // Phone scans the tiny QR → opens http://192.168.x.x:3000/?r=ABC123
+  // Server looks up the room config and redirects to /?join=<base64config>
+  // App boots, reads ?join=, decodes config, auto-joins.
+  if (req.method === 'GET' && req.url?.includes('?r=')) {
+    const parsedUrl = new URL(req.url, `http://localhost:${PORT}`)
+    const code = parsedUrl.searchParams.get('r')?.toUpperCase()
+    if (code) {
+      let found = null
+      for (const [roomId, room] of rooms) {
+        if (roomId.replace(/-/g, '').slice(0, 6).toUpperCase() === code) { found = room; break }
+      }
+      if (found?.config) {
+        const encoded = Buffer.from(JSON.stringify(found.config)).toString('base64')
+        const redirectTo = `/?join=${encodeURIComponent(encoded)}`
+        res.writeHead(302, { Location: redirectTo, 'Cache-Control': 'no-cache' })
+        res.end()
+        console.log(`[→] QR short-code ${code} → redirect to join`)
+        return
+      }
+      // Room not found — serve app anyway (it will show an error)
+    }
+  }
+
   // ── Serve built app static files ─────────────────────────────────
   if (req.method === 'GET' && HAS_DIST) {
     const urlPath = (req.url ?? '/').split('?')[0]  // strip query string

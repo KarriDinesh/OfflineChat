@@ -112,21 +112,19 @@ export default function Setup() {
       setAlias(alias.trim())
       setQuietMode(PURPOSE_META[purpose].defaultQuietMode)
 
-      // Build deep-link URL:
-      // • Primary: local server (http://192.168.x.x:3000/?join=...) — works fully offline
-      //   The signaling server serves the built app at root, so this URL loads the app
-      //   AND carries the room config without any internet required.
-      // • Fallback: current app origin (GitHub Pages) — for online demo use
-      const encoded = btoa(JSON.stringify(config))
-      const localBase = `http://${effectiveIp.trim()}:3000`
-      const joinUrl = `${localBase}/?join=${encodeURIComponent(encoded)}`
+      // Short-code QR: encode ONLY the 6-char room code in the URL.
+      // The signaling server receives ?r=ABC123, looks up the room config,
+      // and redirects to /?join=<base64config> which the app then auto-joins.
+      // Result: ~35 char URL → tiny, highly scannable QR code.
+      const shortCode = roomId.replace(/-/g, '').slice(0, 6).toUpperCase()
+      const joinUrl = `http://${effectiveIp.trim()}:3000/?r=${shortCode}`
 
       const url = await QRCode.toDataURL(joinUrl, {
-        errorCorrectionLevel: 'M', width: 256, margin: 2,
+        errorCorrectionLevel: 'L', width: 300, margin: 2,
         color: { dark: '#0a0a14', light: '#ffffff' },
       })
       setQrDataUrl(url)
-      setJoinCode(roomId.replace(/-/g, '').slice(0, 6).toUpperCase())
+      setJoinCode(shortCode)
       setExpiresAt(expiresAt || Date.now() + expiryMinutes * 60 * 1000)
       setStep('done')
 
