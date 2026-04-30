@@ -6,6 +6,26 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import { createServer } from 'http'
 import { networkInterfaces } from 'os'
+import { readFileSync, existsSync, statSync } from 'fs'
+import { resolve, extname, join } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
+// Serve from app/dist (relative to project root, two levels up from signaling/src/)
+const DIST_DIR = resolve(__dirname, '../../app/dist')
+const HAS_DIST = existsSync(DIST_DIR)
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js':   'application/javascript',
+  '.css':  'text/css',
+  '.png':  'image/png',
+  '.svg':  'image/svg+xml',
+  '.ico':  'image/x-icon',
+  '.woff2':'font/woff2',
+  '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
+}
 
 /** Get first non-loopback IPv4 address */
 function getLanIp() {
@@ -62,6 +82,25 @@ const httpServer = createServer((req, res) => {
     if (!room) { res.writeHead(404); res.end(); return }
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ config: room.config, peerCount: room.peers.size }))
+    return
+  }
+
+  // ── Serve built app static files ─────────────────────────────────
+  if (req.method === 'GET' && HAS_DIST) {
+    const urlPath = (req.url ?? '/').split('?')[0]  // strip query string
+    let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath)
+    // SPA fallback: if file doesn't exist, serve index.html
+    if (!existsSync(filePath) || statSync(filePath).isDirectory()) {
+      filePath = join(DIST_DIR, 'index.html')
+    }
+    try {
+      const ext = extname(filePath)
+      const mime = MIME[ext] ?? 'application/octet-stream'
+      res.writeHead(200, { 'Content-Type': mime, 'Access-Control-Allow-Origin': '*' })
+      res.end(readFileSync(filePath))
+    } catch {
+      res.writeHead(404); res.end('Not found')
+    }
     return
   }
 

@@ -32,6 +32,8 @@ jobs:
 
       - name: Build
         run: npm run build --workspace=app
+        env:
+          VITE_BASE_URL: /OfflineChat/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

@@ -112,10 +112,14 @@ export default function Setup() {
       setAlias(alias.trim())
       setQuietMode(PURPOSE_META[purpose].defaultQuietMode)
 
-      // Build a deep-link URL so the QR opens the app, not raw JSON
+      // Build deep-link URL:
+      // • Primary: local server (http://192.168.x.x:3000/?join=...) — works fully offline
+      //   The signaling server serves the built app at root, so this URL loads the app
+      //   AND carries the room config without any internet required.
+      // • Fallback: current app origin (GitHub Pages) — for online demo use
       const encoded = btoa(JSON.stringify(config))
-      const appBase = `${window.location.origin}${window.location.pathname.replace(/\/+$/, '')}`
-      const joinUrl = `${appBase}?join=${encodeURIComponent(encoded)}`
+      const localBase = `http://${effectiveIp.trim()}:3000`
+      const joinUrl = `${localBase}/?join=${encodeURIComponent(encoded)}`
 
       const url = await QRCode.toDataURL(joinUrl, {
         errorCorrectionLevel: 'M', width: 256, margin: 2,
