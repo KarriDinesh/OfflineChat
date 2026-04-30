@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useStore } from '../store/useStore'
 import { loadOrCreateIdentity, bytesToHex } from '../lib/crypto'
-import { isInMixedContentMode } from '../components/LocalNetworkBanner'
 
 /** Safely decode a base64 string */
 function safeAtob(b64: string): string {
@@ -63,16 +62,11 @@ export default function Join() {
 
   const joinWithParsedConfig = useCallback((config: Record<string, unknown>) => {
     if (!config.roomId || !config.cryptoSalt) {
-      setError('Invalid room config — missing required fields.')
+      setError('Could not read room info from QR. Ask the host to generate a new one.')
       return
     }
     if ((config.expiresAt as number) && Date.now() > (config.expiresAt as number)) {
       setError('This invite has expired. Ask the host for a new QR code.')
-      return
-    }
-    const seedIp = config.seedIp as string | undefined
-    if (isInMixedContentMode(seedIp)) {
-      setError(`🚨 Open http://${seedIp}:3000/ on this device to connect — this HTTPS page can't reach local servers.`)
       return
     }
     const identity = loadOrCreateIdentity()
@@ -132,27 +126,22 @@ export default function Join() {
     if (code.length < 6) { setError('Enter all 6 digits'); return }
     const ip = hostIp.trim()
     if (!ip) { setError('Enter the host\'s IP address (e.g. 192.168.1.42)'); return }
-    // Detect mixed content block before even trying
-    if (isInMixedContentMode(ip)) {
-      setError(`🚨 Open http://${ip}:3000/ on this device instead — this HTTPS page cannot reach local servers due to browser security.`)
-      return
-    }
     setPinLoading(true)
     setError('')
     try {
       const res = await fetch(`http://${ip}:3000/join/${code}`, {
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(6000),
       })
       if (!res.ok) {
         setError(res.status === 404
-          ? 'Room not found. Check the code and IP, or ask the host for a new QR.'
+          ? 'Room not found. Double-check the code and IP.'
           : 'Could not reach the host. Make sure you\'re on the same WiFi.')
         return
       }
       const { config } = await res.json()
       joinWithParsedConfig(config)
     } catch {
-      setError('Could not reach the host server. Make sure you\'re on the same WiFi network.')
+      setError('Could not reach host. Check the IP address and make sure the host app is running.')
     } finally { setPinLoading(false) }
   }, [pin, hostIp, joinWithParsedConfig])
 
