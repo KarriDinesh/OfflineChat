@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useStore } from '../store/useStore'
 import { loadOrCreateIdentity, bytesToHex } from '../lib/crypto'
+import { isInMixedContentMode } from '../components/LocalNetworkBanner'
 
 /** Safely decode a base64 string from a URL param (already URL-decoded by searchParams.get) */
 function safeAtob(b64: string): string {
@@ -45,6 +46,11 @@ export default function Join() {
     }
     if ((config.expiresAt as number) && Date.now() > (config.expiresAt as number)) {
       setError('This invite has expired. Ask the host for a new QR code.')
+      return
+    }
+    const seedIp = config.seedIp as string | undefined
+    if (isInMixedContentMode(seedIp)) {
+      setError(`🚨 Open http://${seedIp}:3000/ on this device to connect — this HTTPS page can't reach local servers.`)
       return
     }
     const identity = loadOrCreateIdentity()
@@ -104,6 +110,11 @@ export default function Join() {
     if (code.length < 6) { setError('Enter all 6 digits'); return }
     const ip = hostIp.trim()
     if (!ip) { setError('Enter the host\'s IP address (e.g. 192.168.1.42)'); return }
+    // Detect mixed content block before even trying
+    if (isInMixedContentMode(ip)) {
+      setError(`🚨 Open http://${ip}:3000/ on this device instead — this HTTPS page cannot reach local servers due to browser security.`)
+      return
+    }
     setPinLoading(true)
     setError('')
     try {
@@ -252,7 +263,30 @@ export default function Join() {
           </>
         )}
 
-        {error && <p style={{ color: 'var(--sos)', marginTop: 12, fontSize: 13, textAlign: 'center' }}>{error}</p>}
+        {error && (
+          <div style={{ marginTop: 12, fontSize: 13, textAlign: 'center', color: 'var(--sos)', lineHeight: 1.5 }}>
+            {error}
+            {/* If error mentions a local URL, render it as a tap-able link */}
+            {/http:\/\/[\d.]+:\d+\//.test(error) && (() => {
+              const match = error.match(/http:\/\/[\d.]+:\d+\//)
+              return match ? (
+                <div style={{ marginTop: 8 }}>
+                  <a
+                    href={match[0]}
+                    style={{
+                      display: 'inline-block',
+                      background: 'var(--accent)', color: 'white',
+                      padding: '8px 20px', borderRadius: 20, textDecoration: 'none',
+                      fontWeight: 700, fontSize: 13,
+                    }}
+                  >
+                    👉 Open {match[0]}
+                  </a>
+                </div>
+              ) : null
+            })()}
+          </div>
+        )}
 
         <div className="divider" style={{ marginTop: 20 }}>
           <div className="divider-line" />

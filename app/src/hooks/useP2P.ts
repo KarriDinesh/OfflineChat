@@ -180,7 +180,11 @@ export function useP2P() {
 
   function connectSignaling() {
     if (!roomConfig) return
-    const ws = new WebSocket(`ws://${roomConfig.seedIp}:3000`)
+    // Use wss:// when page is HTTPS to avoid mixed-content block.
+    // The local server doesn't support TLS, so wss:// will fail — but at
+    // least it won't be silently blocked. Real fix: use the app from http://seedIp:3000/
+    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${wsProto}://${roomConfig.seedIp}:3000`)
     wsRef.current = ws
 
     ws.onopen = () => {

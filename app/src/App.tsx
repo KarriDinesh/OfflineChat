@@ -7,6 +7,7 @@ import Setup from './pages/Setup'
 import Join from './pages/Join'
 import Chat from './pages/Chat'
 import InstallBanner from './components/InstallBanner'
+import LocalNetworkBanner from './components/LocalNetworkBanner'
 import SideNav from './components/SideNav'
 import { registerBackgroundSync } from './lib/platform'
 
@@ -60,6 +61,7 @@ export default function App() {
     <>
       <OfflineBanner />
       <InstallBanner />
+      <LocalNetworkBanner />
       <SideNav />
       {phase === 'setup' && <Setup />}
       {phase === 'join'  && <Join />}
