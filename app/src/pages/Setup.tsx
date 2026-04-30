@@ -112,15 +112,21 @@ export default function Setup() {
       setAlias(alias.trim())
       setQuietMode(PURPOSE_META[purpose].defaultQuietMode)
 
-      // Short-code QR: encode ONLY the 6-char room code in the URL.
-      // The signaling server receives ?r=ABC123, looks up the room config,
-      // and redirects to /?join=<base64config> which the app then auto-joins.
-      // Result: ~35 char URL → tiny, highly scannable QR code.
+      // QR = compact JSON with only the fields needed to join.
+      // ~130 chars → tiny Version 4-5 QR, instant scan.
+      // No URL, no server redirect, no IP navigation — the in-app scanner
+      // reads the JSON and joins directly.
       const shortCode = roomId.replace(/-/g, '').slice(0, 6).toUpperCase()
-      const joinUrl = `http://${effectiveIp.trim()}:3000/?r=${shortCode}`
+      const qrPayload = JSON.stringify({
+        r: roomId,              // full room UUID
+        i: effectiveIp.trim(), // seedIp for signaling server
+        s: saltHex,            // cryptoSalt for E2EE key derivation
+        n: (roomName.trim() || `${PURPOSE_META[purpose].label} Room`).slice(0, 30),
+        e: expiresAtMs,        // expiry timestamp
+      })
 
-      const url = await QRCode.toDataURL(joinUrl, {
-        errorCorrectionLevel: 'L', width: 300, margin: 2,
+      const url = await QRCode.toDataURL(qrPayload, {
+        errorCorrectionLevel: 'M', width: 300, margin: 2,
         color: { dark: '#0a0a14', light: '#ffffff' },
       })
       setQrDataUrl(url)

@@ -4,25 +4,47 @@ import { useStore } from '../store/useStore'
 import { loadOrCreateIdentity, bytesToHex } from '../lib/crypto'
 import { isInMixedContentMode } from '../components/LocalNetworkBanner'
 
-/** Safely decode a base64 string from a URL param (already URL-decoded by searchParams.get) */
+/** Safely decode a base64 string */
 function safeAtob(b64: string): string {
   try { return atob(b64) } catch { return atob(decodeURIComponent(b64)) }
 }
 
-/** Parse a QR text that is either a deep-link URL or raw JSON */
+/** Parse QR text into a room config object. Handles 3 formats:
+ *  1. Compact JSON: {"r":roomId,"i":seedIp,"s":cryptoSalt,"n":name,"e":expiry}
+ *  2. Legacy deep-link URL: ...?join=base64config
+ *  3. Legacy raw full JSON config
+ */
 function parseQRText(text: string): Record<string, unknown> | null {
-  // Try deep-link URL format: ...?join=base64config
+  const trimmed = text.trim()
+
+  // Format 1: compact JSON (new format) — {"r":...,"i":...,"s":...}
   try {
-    const url = new URL(text)
-    const joinParam = url.searchParams.get('join')
-    if (joinParam) {
-      return JSON.parse(safeAtob(joinParam))
+    const compact = JSON.parse(trimmed)
+    if (compact.r && compact.i && compact.s) {
+      // Expand short keys to full config field names
+      return {
+        roomId: compact.r,
+        seedIp: compact.i,
+        cryptoSalt: compact.s,
+        roomName: compact.n ?? 'Room',
+        expiresAt: compact.e ?? null,
+        protocolV: 1,
+      }
     }
+    // Format 3: legacy full JSON config
+    if (compact.roomId && compact.cryptoSalt) return compact
+  } catch { /* not JSON */ }
+
+  // Format 2: legacy deep-link URL with ?join=base64
+  try {
+    const url = new URL(trimmed)
+    const joinParam = url.searchParams.get('join')
+    if (joinParam) return JSON.parse(safeAtob(joinParam))
   } catch { /* not a URL */ }
-  // Try raw JSON (legacy format)
-  try { return JSON.parse(text) } catch { /* not JSON */ }
+
   return null
 }
+
 
 export default function Join() {
   const { setIdentity, setRoomConfig, setRole, setPhase, setAlias, roomConfig } = useStore()
