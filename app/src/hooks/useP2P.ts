@@ -36,7 +36,7 @@ export function useP2P() {
     for (const data of batch) {
       for (const [peerId, dc] of channelsRef.current.entries()) {
         if (dc.readyState === 'open') {
-          try { dc.send(data) } catch { removePeerConn(peerId) }
+          try { dc.send(data as Uint8Array<ArrayBuffer>) } catch { removePeerConn(peerId) }
         }
       }
     }
@@ -164,7 +164,7 @@ export function useP2P() {
       sendWireMessage(syncMsg)
 
       gossipRef.current.addPeer(peerId, (data) => {
-        if (dc.readyState === 'open') dc.send(data)
+        if (dc.readyState === 'open') dc.send(data as Uint8Array<ArrayBuffer>)
       })
     }
 
