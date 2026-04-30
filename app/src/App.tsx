@@ -24,7 +24,7 @@ function OfflineBanner() {
 }
 
 export default function App() {
-  const { phase, setPhase, setIdentity, setRole } = useStore()
+  const { phase, setPhase, setIdentity, setRole, setRoomConfig } = useStore()
 
   useEffect(() => {
     // Restore identity on load
@@ -35,6 +35,25 @@ export default function App() {
     if (token) setRole(token.role)
     // Background sync (Android Doze workaround)
     registerBackgroundSync()
+
+    // ── Deep-link QR handler ──────────────────────────────────────────
+    // QR codes encode: <appUrl>?join=<base64(JSON config)>
+    // When a participant scans the QR their browser opens this URL.
+    // We read the param, pre-load the room config, and send them to Join.
+    const params = new URLSearchParams(window.location.search)
+    const joinParam = params.get('join')
+    if (joinParam) {
+      try {
+        const config = JSON.parse(atob(decodeURIComponent(joinParam)))
+        if (config.roomId && config.cryptoSalt) {
+          setRoomConfig(config)
+          setPhase('join')
+        }
+      } catch { /* malformed param — ignore, stay on setup */ }
+      // Strip param from URL bar so refresh doesn't re-trigger
+      const clean = window.location.pathname + window.location.hash
+      window.history.replaceState(null, '', clean)
+    }
   }, [])
 
   return (

@@ -110,10 +110,14 @@ export default function Setup() {
       setRoomConfig(config)
       setRole('admin')
       setAlias(alias.trim())
-      // Apply purpose defaults
       setQuietMode(PURPOSE_META[purpose].defaultQuietMode)
 
-      const url = await QRCode.toDataURL(JSON.stringify(config), {
+      // Build a deep-link URL so the QR opens the app, not raw JSON
+      const encoded = btoa(JSON.stringify(config))
+      const appBase = `${window.location.origin}${window.location.pathname.replace(/\/+$/, '')}`
+      const joinUrl = `${appBase}?join=${encodeURIComponent(encoded)}`
+
+      const url = await QRCode.toDataURL(joinUrl, {
         errorCorrectionLevel: 'M', width: 256, margin: 2,
         color: { dark: '#0a0a14', light: '#ffffff' },
       })
