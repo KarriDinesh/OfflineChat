@@ -8,41 +8,57 @@ function safeAtob(b64: string): string {
   try { return atob(b64) } catch { return atob(decodeURIComponent(b64)) }
 }
 
-/** Parse QR text into a room config object. Handles 3 formats:
- *  1. Compact JSON: {"r":roomId,"i":seedIp,"s":cryptoSalt,"n":name,"e":expiry}
- *  2. Legacy deep-link URL: ...?join=base64config
- *  3. Legacy raw full JSON config
+/** Parse QR text into a room config object. Handles multiple formats.
+ *  Returns { config, redirectUrl } — if redirectUrl is set, browser should navigate there.
  */
-function parseQRText(text: string): Record<string, unknown> | null {
+function parseQRText(text: string): { config: Record<string, unknown> | null; redirectUrl: string | null } {
   const trimmed = text.trim()
 
-  // Format 1: compact JSON (new format) — {"r":...,"i":...,"s":...}
+  // Format 1: URL with ?join=base64 (new canonical format)
+  // e.g. http://192.168.1.42:3000/?join=eyJy...
+  try {
+    const url = new URL(trimmed)
+    const joinParam = url.searchParams.get('join')
+    if (joinParam) {
+      // If we're on HTTPS and this is a local HTTP URL, redirect browser there
+      // so WebSocket ws:// works correctly
+      if (window.location.protocol === 'https:' && url.protocol === 'http:') {
+        return { config: null, redirectUrl: trimmed }
+      }
+      const decoded = JSON.parse(safeAtob(joinParam))
+      // Compact format {r,s,n,e} — add seedIp from URL hostname
+      const config = decoded.r && !decoded.roomId ? {
+        roomId: decoded.r,
+        seedIp: url.hostname,
+        cryptoSalt: decoded.s,
+        roomName: decoded.n ?? 'Room',
+        expiresAt: decoded.e ?? null,
+        protocolV: 1,
+      } : { ...decoded, seedIp: decoded.seedIp ?? url.hostname }
+      return { config, redirectUrl: null }
+    }
+  } catch { /* not a URL */ }
+
+  // Format 2: compact JSON {r,i,s,n,e}
   try {
     const compact = JSON.parse(trimmed)
-    if (compact.r && compact.i && compact.s) {
-      // Expand short keys to full config field names
-      return {
+    if (compact.r && compact.s) {
+      const config = {
         roomId: compact.r,
-        seedIp: compact.i,
+        seedIp: compact.i ?? '',
         cryptoSalt: compact.s,
         roomName: compact.n ?? 'Room',
         expiresAt: compact.e ?? null,
         protocolV: 1,
       }
+      return { config, redirectUrl: null }
     }
-    // Format 3: legacy full JSON config
-    if (compact.roomId && compact.cryptoSalt) return compact
+    if (compact.roomId && compact.cryptoSalt) return { config: compact, redirectUrl: null }
   } catch { /* not JSON */ }
 
-  // Format 2: legacy deep-link URL with ?join=base64
-  try {
-    const url = new URL(trimmed)
-    const joinParam = url.searchParams.get('join')
-    if (joinParam) return JSON.parse(safeAtob(joinParam))
-  } catch { /* not a URL */ }
-
-  return null
+  return { config: null, redirectUrl: null }
 }
+
 
 
 export default function Join() {
@@ -95,13 +111,18 @@ export default function Join() {
         (text) => {
           scanner.stop().catch(() => {})
           setScanning(false)
-          const config = parseQRText(text)
+          const { config, redirectUrl } = parseQRText(text)
+          if (redirectUrl) {
+            // QR points to local HTTP server — navigate there so ws:// works
+            window.location.href = redirectUrl
+            return
+          }
           if (!config) { setError('Could not read QR code. Try again.'); return }
           joinWithParsedConfig(config)
         },
         () => {}
       )
-    } catch (e) {
+    } catch {
       setError('Camera access denied. Please allow camera or use code join.')
       setScanning(false)
     }

@@ -180,7 +180,22 @@ wss.on('connection', (ws) => {
         return
       }
 
-      // Relay: offer / answer / ice
+      // ── Chat relay: broadcast to all peers in the room ─────────────
+      // This is the primary message path. WebRTC is an optional overlay.
+      if (msg.type === 'relay' && roomId) {
+        const room = rooms.get(roomId)
+        if (room) {
+          const payload = JSON.stringify({ type: 'relay', from: peerId, data: msg.data })
+          for (const [pid, peerWs] of room.peers) {
+            if (pid !== peerId && peerWs.readyState === WebSocket.OPEN) {
+              peerWs.send(payload)
+            }
+          }
+        }
+        return
+      }
+
+      // Relay: offer / answer / ice (WebRTC signaling — point-to-point)
       if (msg.to && roomId) {
         const room = rooms.get(roomId)
         const targetWs = room?.peers.get(msg.to)

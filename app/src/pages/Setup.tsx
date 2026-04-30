@@ -112,20 +112,19 @@ export default function Setup() {
       setAlias(alias.trim())
       setQuietMode(PURPOSE_META[purpose].defaultQuietMode)
 
-      // QR = compact JSON with only the fields needed to join.
-      // ~130 chars → tiny Version 4-5 QR, instant scan.
-      // No URL, no server redirect, no IP navigation — the in-app scanner
-      // reads the JSON and joins directly.
+      // QR encodes: http://192.168.x.x:3000/?join=<compactBase64>
+      // • Phone camera scans → opens local HTTP server → ws:// WebSocket works ✓
+      // • In-app scanner: detects local URL → redirects browser there
+      // Compact payload (no adminPub/memberCap) keeps QR small and scannable.
       const shortCode = roomId.replace(/-/g, '').slice(0, 6).toUpperCase()
-      const qrPayload = JSON.stringify({
-        r: roomId,              // full room UUID
-        i: effectiveIp.trim(), // seedIp for signaling server
-        s: saltHex,            // cryptoSalt for E2EE key derivation
-        n: (roomName.trim() || `${PURPOSE_META[purpose].label} Room`).slice(0, 30),
-        e: expiresAtMs,        // expiry timestamp
-      })
+      const compactPayload = btoa(JSON.stringify({
+        r: roomId, s: saltHex,
+        n: (roomName.trim() || `${PURPOSE_META[purpose].label} Room`).slice(0, 24),
+        e: expiresAtMs,
+      }))
+      const joinUrl = `http://${effectiveIp.trim()}:3000/?join=${compactPayload}`
 
-      const url = await QRCode.toDataURL(qrPayload, {
+      const url = await QRCode.toDataURL(joinUrl, {
         errorCorrectionLevel: 'M', width: 300, margin: 2,
         color: { dark: '#0a0a14', light: '#ffffff' },
       })
