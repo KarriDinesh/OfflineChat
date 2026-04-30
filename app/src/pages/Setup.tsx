@@ -7,14 +7,17 @@ import { v4 as uuid } from 'uuid'
 
 async function detectLanIP(): Promise<string> {
   const host = window.location.hostname
+  // Already running on a LAN IP — use it directly
   if (host && host !== 'localhost' && host !== '127.0.0.1' && /^\d+\.\d+\.\d+\.\d+$/.test(host)) return host
+  // Running on a named host (e.g. github.io) — can't auto-detect, ask user
+  if (host && !/^(localhost|127\.0\.0\.1)$/.test(host)) return ''
   try {
     const res = await fetch(`http://127.0.0.1:3000/config`, { signal: AbortSignal.timeout(1500) })
     if (res.ok) { const d = await res.json(); if (d.lanIp) return d.lanIp }
   } catch {}
   return new Promise((resolve) => {
     const pc = new RTCPeerConnection({ iceServers: [] })
-    const t = setTimeout(() => { pc.close(); resolve('127.0.0.1') }, 2000)
+    const t = setTimeout(() => { pc.close(); resolve('') }, 2000)
     pc.createDataChannel('')
     pc.createOffer().then(o => pc.setLocalDescription(o))
     pc.onicecandidate = (e) => {
@@ -53,8 +56,12 @@ export default function Setup() {
 
   useEffect(() => {
     detectLanIP().then(ip => {
-      setDetectedIp(ip)
-      setIpStatus(ip !== '127.0.0.1' ? 'found' : 'manual')
+      if (ip) {
+        setDetectedIp(ip)
+        setIpStatus('found')
+      } else {
+        setIpStatus('manual')
+      }
     })
   }, [])
 
@@ -156,9 +163,9 @@ export default function Setup() {
             </div>
 
             <button className="btn btn-primary w-full" id="btn-next-purpose"
-              disabled={!alias.trim() || ipStatus === 'detecting'}
+              disabled={!alias.trim() || (ipStatus === 'manual' && !manualIp.trim())}
               onClick={() => setStep('purpose')}>
-              Next — Choose Room Type →
+              {ipStatus === 'detecting' ? '⏳ Detecting network…' : 'Next — Choose Room Type →'}
             </button>
 
             <div className="divider"><div className="divider-line" /><span className="divider-text">already have a room?</span><div className="divider-line" /></div>
