@@ -453,8 +453,8 @@ export default function Setup() {
                 </>
               )}
 
-              <div className="divider"><div className="divider-line" /><span className="divider-text">or 6-digit code</span><div className="divider-line" /></div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 16 }}>
+              <div className="divider"><div className="divider-line" /><span className="divider-text">or 6-digit code + IP</span><div className="divider-line" /></div>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 8 }}>
                 {joinCode.split('').map((d, i) => (
                   <div key={i} style={{
                     width: 44, height: 54, background: 'var(--bg-elevated)',
@@ -464,6 +464,18 @@ export default function Setup() {
                     opacity: expired ? 0.4 : 1,
                   }}>{d}</div>
                 ))}
+              </div>
+              {/* Show host IP for PIN join */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                marginBottom: 16, fontSize: 12, color: 'var(--text-muted)',
+              }}>
+                <span>Host IP:</span>
+                <code style={{
+                  background: 'var(--bg-elevated)', padding: '3px 10px', borderRadius: 8,
+                  fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-primary)',
+                  border: '1px solid var(--border)',
+                }}>{effectiveIp || '—'}</code>
               </div>
 
               <button id="btn-enter-chat" className="btn btn-primary w-full" onClick={() => setPhase('chat')}>

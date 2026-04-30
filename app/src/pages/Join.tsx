@@ -1,14 +1,36 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useStore } from '../store/useStore'
 import { loadOrCreateIdentity, bytesToHex } from '../lib/crypto'
+
+/** Safely decode a base64 string from a URL param (already URL-decoded by searchParams.get) */
+function safeAtob(b64: string): string {
+  try { return atob(b64) } catch { return atob(decodeURIComponent(b64)) }
+}
+
+/** Parse a QR text that is either a deep-link URL or raw JSON */
+function parseQRText(text: string): Record<string, unknown> | null {
+  // Try deep-link URL format: ...?join=base64config
+  try {
+    const url = new URL(text)
+    const joinParam = url.searchParams.get('join')
+    if (joinParam) {
+      return JSON.parse(safeAtob(joinParam))
+    }
+  } catch { /* not a URL */ }
+  // Try raw JSON (legacy format)
+  try { return JSON.parse(text) } catch { /* not JSON */ }
+  return null
+}
 
 export default function Join() {
   const { setIdentity, setRoomConfig, setRole, setPhase, setAlias, roomConfig } = useStore()
   const [alias, setAliasLocal] = useState('')
   const [pin, setPin] = useState(['', '', '', '', '', ''])
+  const [hostIp, setHostIp] = useState('')
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
+  const [pinLoading, setPinLoading] = useState(false)
   const [tab, setTab] = useState<'qr' | 'pin'>('qr')
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const pinRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -16,40 +38,28 @@ export default function Join() {
   // If a config was pre-loaded from a QR deep link, skip straight to quick-join UI
   const hasPreloaded = !!(roomConfig?.roomId && roomConfig?.cryptoSalt)
 
-  const joinWithConfig = useCallback((configRaw: string) => {
-    try {
-      const config = JSON.parse(configRaw)
-      if (!config.roomId || !config.seedIp || !config.cryptoSalt) throw new Error('Invalid')
-      // Check expiry
-      if (config.expiresAt && Date.now() > config.expiresAt) {
-        setError('This QR code has expired. Ask the host to generate a new one.')
-        return
-      }
-      const identity = loadOrCreateIdentity()
-      setIdentity(identity)
-      setRoomConfig(config)
-      setRole('member')
-      setAlias(alias.trim() || `peer-${bytesToHex(identity.publicKey).slice(0, 6)}`)
-      setPhase('chat')
-    } catch (e: unknown) {
-      if (e instanceof Error && e.message === 'expired') return
-      setError('Invalid QR code or room config.')
+  const joinWithParsedConfig = useCallback((config: Record<string, unknown>) => {
+    if (!config.roomId || !config.cryptoSalt) {
+      setError('Invalid room config — missing required fields.')
+      return
     }
-  }, [alias])
-
-  // Quick join using pre-loaded config (from ?join= deep link)
-  const handleQuickJoin = useCallback(() => {
-    if (!roomConfig || !alias.trim()) return
-    if (roomConfig.expiresAt && Date.now() > roomConfig.expiresAt) {
+    if ((config.expiresAt as number) && Date.now() > (config.expiresAt as number)) {
       setError('This invite has expired. Ask the host for a new QR code.')
       return
     }
     const identity = loadOrCreateIdentity()
     setIdentity(identity)
+    setRoomConfig(config as never)
     setRole('member')
-    setAlias(alias.trim())
+    setAlias(alias.trim() || `peer-${bytesToHex(identity.publicKey).slice(0, 6)}`)
     setPhase('chat')
-  }, [roomConfig, alias])
+  }, [alias])
+
+  // Quick join using pre-loaded config (from ?join= deep link)
+  const handleQuickJoin = useCallback(() => {
+    if (!roomConfig || !alias.trim()) return
+    joinWithParsedConfig(roomConfig as unknown as Record<string, unknown>)
+  }, [roomConfig, alias, joinWithParsedConfig])
 
   const startScan = useCallback(async () => {
     setScanning(true)
@@ -59,28 +69,24 @@ export default function Join() {
     try {
       await scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: 250 },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         (text) => {
-          scanner.stop()
+          scanner.stop().catch(() => {})
           setScanning(false)
-          // Handle both deep-link URLs and legacy raw JSON
-          try {
-            const url = new URL(text)
-            const joinParam = url.searchParams.get('join')
-            if (joinParam) {
-              joinWithConfig(atob(decodeURIComponent(joinParam)))
-              return
-            }
-          } catch { /* not a URL — fall through to raw JSON */ }
-          joinWithConfig(text)
+          const config = parseQRText(text)
+          if (!config) { setError('Could not read QR code. Try again.'); return }
+          joinWithParsedConfig(config)
         },
         () => {}
       )
-    } catch { setError('Camera access denied. Use PIN instead.'); setScanning(false) }
-  }, [joinWithConfig])
+    } catch (e) {
+      setError('Camera access denied. Please allow camera or use code join.')
+      setScanning(false)
+    }
+  }, [joinWithParsedConfig])
 
   const stopScan = () => {
-    scannerRef.current?.stop()
+    scannerRef.current?.stop().catch(() => {})
     setScanning(false)
   }
 
@@ -92,11 +98,30 @@ export default function Join() {
     if (v && i < 5) pinRefs.current[i + 1]?.focus()
   }
 
-  const handlePinJoin = useCallback(() => {
+  // PIN join: fetch full room config from host's signaling server
+  const handlePinJoin = useCallback(async () => {
     const code = pin.join('')
     if (code.length < 6) { setError('Enter all 6 digits'); return }
-    setError('PIN join requires the host\'s IP. Ask them to share it.')
-  }, [pin])
+    const ip = hostIp.trim()
+    if (!ip) { setError('Enter the host\'s IP address (e.g. 192.168.1.42)'); return }
+    setPinLoading(true)
+    setError('')
+    try {
+      const res = await fetch(`http://${ip}:3000/join/${code}`, {
+        signal: AbortSignal.timeout(5000),
+      })
+      if (!res.ok) {
+        setError(res.status === 404
+          ? 'Room not found. Check the code and IP, or ask the host for a new QR.'
+          : 'Could not reach the host. Make sure you\'re on the same WiFi.')
+        return
+      }
+      const { config } = await res.json()
+      joinWithParsedConfig(config)
+    } catch {
+      setError('Could not reach the host server. Make sure you\'re on the same WiFi network.')
+    } finally { setPinLoading(false) }
+  }, [pin, hostIp, joinWithParsedConfig])
 
   return (
     <div className="page-center">
@@ -176,24 +201,51 @@ export default function Join() {
 
             {tab === 'pin' && (
               <>
-                <div className="join-code">
-                  {pin.map((d, i) => (
-                    <input
-                      key={i}
-                      ref={el => { pinRefs.current[i] = el }}
-                      className="join-code-digit"
-                      maxLength={1}
-                      value={d}
-                      onChange={e => handlePinChange(i, e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Backspace' && !d && i > 0) pinRefs.current[i - 1]?.focus()
-                      }}
-                      id={`pin-digit-${i}`}
-                    />
-                  ))}
+                <div style={{ marginBottom: 14 }}>
+                  <div className="form-label">6-DIGIT ROOM CODE</div>
+                  <div className="join-code" style={{ margin: '8px 0 0' }}>
+                    {pin.map((d, i) => (
+                      <input
+                        key={i}
+                        ref={el => { pinRefs.current[i] = el }}
+                        className="join-code-digit"
+                        maxLength={1}
+                        value={d}
+                        onChange={e => handlePinChange(i, e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Backspace' && !d && i > 0) pinRefs.current[i - 1]?.focus()
+                          if (e.key === 'Enter' && pin.join('').length === 6) handlePinJoin()
+                        }}
+                        id={`pin-digit-${i}`}
+                        autoFocus={i === 0}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <button id="btn-pin-join" className="btn btn-primary w-full mt-4" onClick={handlePinJoin}>
-                  🔓 Join with Code
+
+                <div className="form-group">
+                  <label className="form-label">HOST'S IP ADDRESS</label>
+                  <input
+                    className="form-input"
+                    style={{ fontFamily: 'var(--font-mono)', letterSpacing: '1px' }}
+                    placeholder="e.g. 192.168.1.42"
+                    value={hostIp}
+                    onChange={e => setHostIp(e.target.value)}
+                    id="pin-host-ip"
+                    onKeyDown={e => { if (e.key === 'Enter') handlePinJoin() }}
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Ask the room host to share their WiFi IP address
+                  </div>
+                </div>
+
+                <button
+                  id="btn-pin-join"
+                  className="btn btn-primary w-full"
+                  onClick={handlePinJoin}
+                  disabled={pinLoading || pin.join('').length < 6 || !hostIp.trim()}
+                >
+                  {pinLoading ? '⏳ Connecting…' : '🔓 Join with Code'}
                 </button>
               </>
             )}

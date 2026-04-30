@@ -77,11 +77,25 @@ const httpServer = createServer((req, res) => {
   }
 
   if (req.method === 'GET' && req.url?.startsWith('/room/')) {
-    const roomId = req.url.replace('/room/', '')
+    const roomId = req.url.replace('/room/', '').split('?')[0]
     const room = rooms.get(roomId)
     if (!room) { res.writeHead(404); res.end(); return }
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ config: room.config, peerCount: room.peers.size }))
+    return
+  }
+
+  // GET /join/:code — look up a room by its 6-char short code
+  if (req.method === 'GET' && req.url?.startsWith('/join/')) {
+    const code = req.url.replace('/join/', '').split('?')[0].toUpperCase()
+    let found = null
+    for (const [roomId, room] of rooms) {
+      const roomCode = roomId.replace(/-/g, '').slice(0, 6).toUpperCase()
+      if (roomCode === code) { found = room; break }
+    }
+    if (!found || !found.config) { res.writeHead(404); res.end(JSON.stringify({ error: 'Room not found' })); return }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ config: found.config, peerCount: found.peers.size }))
     return
   }
 
